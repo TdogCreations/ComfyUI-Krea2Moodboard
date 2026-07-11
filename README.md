@@ -63,6 +63,29 @@ second edit adding person B from their reference).
 - `krea2_moodboard_t2i.json` — basic vibe transfer text-to-image
 - `krea2_identity_edit_fusion.json` — identity edit + moodboard style fusion
 
+### Full pipeline: `Krea_Workflow_Public.json` (advanced)
+
+The author's complete daily-driver workflow: JoyCaption auto-captioning of scene/subject references,
+wildcard prompting, identity edit + moodboard fusion, AR handling, optional upscale pass, group
+bypass switches. Requires these custom node packs (all installable via ComfyUI-Manager):
+
+| Pack | Used for |
+|---|---|
+| rgthree-comfy | switches, group bypassers, Power Lora Loader |
+| ComfyUI-mxToolkit | sliders |
+| ComfyUI-Impact-Pack | wildcard processor |
+| ComfyUI-KJNodes | Set/Get nodes |
+| ComfyUI_Comfyroll_CustomNodes | prompt combine, aspect ratio, text replace |
+| ComfyUI-JoyCaption | image -> prompt captioning (downloads its captioner model on first run) |
+| ComfyUI-Custom-Scripts (pythongosssss) | text display |
+| comfyui-ollama-describer | text transformer node |
+| ComfyUI-Image-Saver | sampler selector |
+| comfyui_layerstyle | seed node |
+| ComfyUI-WhiteRabbit | batch Lanczos resize |
+| Derfuu_ComfyUI_ModdedNodes | text box |
+
+The two lean example workflows above need NONE of these — core nodes + this pack only.
+
 Settings baked in: ModelSamplingAuraFlow shift 1.15, Euler/Simple, Turbo 8 steps CFG 1 (removals:
 Raw checkpoint, 20–40 steps, CFG 3). Match the output AR to the source; generate ≤2MP.
 
