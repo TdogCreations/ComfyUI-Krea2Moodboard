@@ -1,0 +1,339 @@
+"""ComfyUI-Krea2Moodboard — krea.ai-style moodboard / vibe transfer for the open Krea 2 model.
+
+Two nodes:
+- Krea2 Moodboard Encode: multi-image style/vibe conditioning (packed vision span, strength with
+  style/subject extraction, style crops, indirect mode, style directives).
+- Krea2 Moodboard + Edit Fusion: fuses moodboard style with an identity-edit source image — designed
+  to compose with ComfyUI-Krea2Edit's model patch (style from the moodboard, identity from the edit
+  source). https://github.com/lbouaraba/comfyui-krea2edit
+
+Implementation notes: multiple references are packed into ONE vision span (repeated spans or
+"Picture N:" labels read to K2 as "an image containing N pictures" and produce grid outputs).
+Strength is an information knob, not a magnitude knob (per-token RMSNorms erase scaling): "style"
+extract collapses spans toward a mean/±std statistics signature, "subject" whitens the statistics
+away and keeps the token structure. Ported from the authors' Forge Neo implementation.
+"""
+
+import math
+
+import torch
+
+import comfy.text_encoders.krea2
+import comfy.text_encoders.qwen3vl
+from comfy.text_encoders.krea2 import KREA2_TEMPLATE, Krea2TEModel
+
+STYLE_DIRECTIVE = (
+    "The image uses only the art style, color palette, lighting, texture, rendering technique and "
+    "overall mood of the reference images. The subjects, objects and composition of the image come "
+    "from the following text description alone. "
+)
+SUBJECT_DIRECTIVE = (
+    "The image depicts the same subjects, objects and composition as the reference images, "
+    "rendered in the art style described by the following text. "
+)
+VISION_BLOCK = "<|vision_start|><|image_pad|><|vision_end|>"
+
+# Sizes of spliced vision spans, recorded in splice order during the current encode.
+_SPAN_SIZES = []
+
+
+# ---------------------------------------------------------------------------
+# Patch 1: packed multi-image spans — Qwen3VL.preprocess_embed accepts a LIST of images and
+# concatenates their tokens into one contiguous span (single image reference to the model).
+# ---------------------------------------------------------------------------
+_orig_preprocess = comfy.text_encoders.qwen3vl.Qwen3VL.preprocess_embed
+
+
+def _packed_preprocess_embed(self, embed, device):
+    data = embed.get("data", None)
+    if isinstance(data, (list, tuple)):
+        merged_all, deepstack_all, grids = [], [], []
+        for img in data:
+            merged, extra = _orig_preprocess(self, {"type": "image", "data": img, "original_type": "image"}, device)
+            merged_all.append(merged)
+            deepstack_all.append(extra["deepstack"] if isinstance(extra, dict) else None)
+            grids.append(extra["grid"] if isinstance(extra, dict) else extra)
+        merged = torch.cat(merged_all, dim=0)
+        deepstack = None
+        if deepstack_all and deepstack_all[0] is not None:
+            deepstack = [torch.cat([ds[i] for ds in deepstack_all], dim=0) for i in range(len(deepstack_all[0]))]
+        _SPAN_SIZES.append(merged.shape[0])
+        return merged, {"grid": grids[0], "deepstack": deepstack, "packed": True}
+
+    merged, extra = _orig_preprocess(self, embed, device)
+    if merged is not None:
+        _SPAN_SIZES.append(merged.shape[0])
+    return merged, extra
+
+
+comfy.text_encoders.qwen3vl.Qwen3VL.preprocess_embed = _packed_preprocess_embed
+
+
+# ---------------------------------------------------------------------------
+# Patch 2: moodboard effects inside Krea2's encode (pre-template-strip, spans known exactly).
+# Controlled by attributes set on clip.cond_stage_model by the nodes; no-ops otherwise.
+# ---------------------------------------------------------------------------
+_orig_encode_token_weights = Krea2TEModel.encode_token_weights
+
+
+def _apply_moodboard_effects(model, out, spans, extra):
+    """out: (B, 12, seq, 2560) pre-strip. spans: [(start, end)] post-splice indices."""
+    limit = getattr(model, "moodboard_span_limit", None)
+    if limit is not None:
+        spans = spans[:limit]
+    if not spans:
+        return out, extra
+
+    if getattr(model, "moodboard_hide_refs", False):
+        keep = torch.ones(out.shape[2], dtype=torch.bool, device=out.device)
+        for start, end in spans:
+            keep[start:end] = False
+        out = out[:, :, keep]
+        if "attention_mask" in extra:
+            extra["attention_mask"] = extra["attention_mask"][:, keep]
+        return out, extra
+
+    strength = float(getattr(model, "moodboard_strength", 1.0))
+    if strength >= 1.0:
+        return out, extra
+    strength = max(0.0, strength)
+
+    joint = torch.cat([out[:, :, start:end] for start, end in spans], dim=2)
+    mu = joint.mean(dim=2, keepdim=True)
+    sigma = joint.std(dim=2, keepdim=True)
+
+    if getattr(model, "moodboard_extract", "style") == "subject":
+        safe_sigma = sigma.clamp_min(1e-4)
+        for start, end in spans:
+            span = out[:, :, start:end]
+            whitened = (span - mu) / safe_sigma
+            out[:, :, start:end] = whitened + strength * (span - whitened)
+    else:
+        for start, end in spans:
+            span = out[:, :, start:end]
+            n = span.shape[2]
+            coef = torch.tensor([0.0, 1.0, -1.0], device=span.device, dtype=span.dtype).repeat((n + 2) // 3)[:n].view(1, 1, n, 1)
+            target = mu + coef * sigma
+            out[:, :, start:end] = target + strength * (span - target)
+    return out, extra
+
+
+def _moodboard_encode_token_weights(self, token_weight_pairs, template_end=-1):
+    _SPAN_SIZES.clear()
+    out, pooled, extra = super(Krea2TEModel, self).encode_token_weights(token_weight_pairs)
+    tok_pairs = token_weight_pairs["qwen3vl_4b"][0]
+
+    import numbers
+
+    # Strip index (original logic) — always resolves before the first image span.
+    count_im_start = 0
+    if template_end == -1:
+        for i, v in enumerate(tok_pairs):
+            elem = v[0]
+            if not torch.is_tensor(elem) and isinstance(elem, numbers.Integral):
+                if elem == 151644 and count_im_start < 2:
+                    template_end = i
+                    count_im_start += 1
+        if out.shape[2] > (template_end + 3):
+            if tok_pairs[template_end + 1][0] == 872:
+                if tok_pairs[template_end + 2][0] == 198:
+                    template_end += 3
+
+    # Post-splice span positions: walk the (pre-splice) token pairs, expanding image entries by the
+    # sizes recorded during preprocessing (same order).
+    spans = []
+    offset = 0
+    sizes = iter(list(_SPAN_SIZES))
+    for i, v in enumerate(tok_pairs):
+        elem = v[0]
+        if isinstance(elem, dict):
+            n = next(sizes, 0)
+            start = i + offset
+            spans.append((start, start + n))
+            offset += n - 1
+
+    out, extra = _apply_moodboard_effects(self, out, spans, extra)
+
+    out = out[:, :, template_end:]
+    b, n, seq, h = out.shape
+    out = out.permute(0, 2, 1, 3).reshape(b, seq, n * h)
+
+    if "attention_mask" in extra:
+        extra["attention_mask"] = extra["attention_mask"][:, template_end:]
+        if extra["attention_mask"].sum() == torch.numel(extra["attention_mask"]):
+            extra.pop("attention_mask")
+
+    return out, pooled, extra
+
+
+Krea2TEModel.encode_token_weights = _moodboard_encode_token_weights
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+def expand_style_crops(images, n=2):
+    """images: list of (1, H, W, C). n x n shuffled crops per image — composition cannot survive,
+    palette/texture/lighting are in every crop."""
+    orders = {
+        2: (2, 0, 3, 1),
+        4: (10, 3, 12, 5, 0, 15, 6, 9, 2, 13, 4, 11, 8, 1, 14, 7),
+    }
+    order = orders.get(n) or tuple(range(n * n))
+    crops = []
+    for image in images:
+        h, w = image.shape[1] // n, image.shape[2] // n
+        grid = [image[:, r * h:(r + 1) * h, c * w:(c + 1) * w] for r in range(n) for c in range(n)]
+        crops.extend(grid[i] for i in order)
+    return crops
+
+
+def resize_area(image, total_px, never_upscale=False):
+    samples = image.movedim(-1, 1)
+    scale_by = math.sqrt(total_px / (samples.shape[3] * samples.shape[2]))
+    if never_upscale:
+        scale_by = min(1.0, scale_by)
+    height = max(32, round(samples.shape[2] * scale_by))
+    width = max(32, round(samples.shape[3] * scale_by))
+    samples = torch.nn.functional.interpolate(samples, size=(height, width), mode="area")
+    return samples.movedim(1, -1)[:, :, :, :3]
+
+
+def cap_longest_side(image, px):
+    samples = image.movedim(-1, 1)
+    h, w = samples.shape[2], samples.shape[3]
+    if px and max(h, w) > px:
+        scale_by = px / max(h, w)
+        samples = torch.nn.functional.interpolate(samples, size=(round(h * scale_by), round(w * scale_by)), mode="area")
+    return samples.movedim(1, -1)[:, :, :, :3]
+
+
+def set_flags(clip, strength=1.0, hide=False, extract="style", span_limit=None):
+    model = clip.cond_stage_model
+    model.moodboard_strength = strength
+    model.moodboard_hide_refs = hide
+    model.moodboard_extract = extract
+    model.moodboard_span_limit = span_limit
+
+
+def clear_flags(clip):
+    set_flags(clip)
+
+
+REF_MODES = ["full image", "quadrant crops (2x2)", "fine tiles (4x4)"]
+
+
+def prep_references(image_batch, ref_mode, budget):
+    refs = [image_batch[i:i + 1] for i in range(image_batch.shape[0])]
+    crops_n = 4 if "4x4" in ref_mode else 2 if "2x2" in ref_mode else 0
+    total = int(budget) * int(budget)
+    if crops_n:
+        refs = expand_style_crops(refs, n=crops_n)
+        total = total // (3 if crops_n == 2 else 12)
+    return [resize_area(r, total, never_upscale=(budget >= 1024)) for r in refs]
+
+
+# ---------------------------------------------------------------------------
+# Nodes
+# ---------------------------------------------------------------------------
+class Krea2MoodboardEncode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "clip": ("CLIP",),
+                "prompt": ("STRING", {"multiline": True, "default": ""}),
+                "images": ("IMAGE", {"tooltip": "reference images (batch them for multiple)"}),
+                "strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05,
+                                       "tooltip": "1.0 = raw reference detail; lower = purer extract of the selected aspect"}),
+                "extract": (["style / vibe", "subject / concept"],),
+                "reference_processing": (REF_MODES,),
+                "style_directive": ("BOOLEAN", {"default": True}),
+                "indirect": ("BOOLEAN", {"default": False, "tooltip": "hide reference tokens from the DiT: style arrives only via prompt re-contextualization; cannot copy pose/subject"}),
+                "position": (["before prompt", "after prompt"],),
+                "budget_px": ("INT", {"default": 384, "min": 128, "max": 1536, "step": 64,
+                                      "tooltip": "area budget per reference fed to the vision encoder"}),
+            }
+        }
+
+    RETURN_TYPES = ("CONDITIONING",)
+    FUNCTION = "encode"
+    CATEGORY = "krea2moodboard"
+    DESCRIPTION = "Moodboard / vibe-transfer conditioning for Krea 2: multiple references pack into one vision span and blend."
+
+    def encode(self, clip, prompt, images, strength, extract, reference_processing, style_directive, indirect, position, budget_px):
+        refs = prep_references(images, reference_processing, budget_px)
+        extract_key = "subject" if extract.startswith("subject") else "style"
+
+        directive = ""
+        if style_directive:
+            directive = SUBJECT_DIRECTIVE if extract_key == "subject" else STYLE_DIRECTIVE
+
+        if position == "after prompt":
+            text = prompt + (" " + directive if directive else "") + VISION_BLOCK
+        else:
+            text = VISION_BLOCK + directive + prompt
+
+        set_flags(clip, strength=float(strength), hide=bool(indirect), extract=extract_key, span_limit=None)
+        try:
+            tokens = clip.tokenize(text, images=[refs], llama_template=KREA2_TEMPLATE)
+            conditioning = clip.encode_from_tokens_scheduled(tokens)
+        finally:
+            clear_flags(clip)
+        return (conditioning,)
+
+
+class Krea2MoodboardEditFusion:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "clip": ("CLIP",),
+                "instruction": ("STRING", {"multiline": True, "default": ""}),
+                "edit_source": ("IMAGE", {"tooltip": "the identity-edit source image (also feed its VAE latent to Krea2EditModelPatch from ComfyUI-Krea2Edit)"}),
+                "moodboard_images": ("IMAGE",),
+                "strength": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "extract": (["style / vibe", "subject / concept"],),
+                "reference_processing": (REF_MODES,),
+                "style_directive": ("BOOLEAN", {"default": True}),
+                "indirect": ("BOOLEAN", {"default": False}),
+                "budget_px": ("INT", {"default": 384, "min": 128, "max": 1536, "step": 64}),
+                "grounding_px": ("INT", {"default": 768, "min": 0, "max": 2048, "step": 64,
+                                         "tooltip": "longest-side cap for the edit source fed to the vision encoder"}),
+            }
+        }
+
+    RETURN_TYPES = ("CONDITIONING",)
+    FUNCTION = "encode"
+    CATEGORY = "krea2moodboard"
+    DESCRIPTION = "Fuses moodboard STYLE with an identity-edit SOURCE: moodboard span is pooled/hidden, the edit grounding span stays raw. Use with ComfyUI-Krea2Edit's model patch; ground the negative with an empty instruction + the same source."
+
+    def encode(self, clip, instruction, edit_source, moodboard_images, strength, extract, reference_processing, style_directive, indirect, budget_px, grounding_px):
+        refs = prep_references(moodboard_images, reference_processing, budget_px)
+        extract_key = "subject" if extract.startswith("subject") else "style"
+
+        directive = ""
+        if style_directive:
+            directive = SUBJECT_DIRECTIVE if extract_key == "subject" else STYLE_DIRECTIVE
+
+        edit_img = cap_longest_side(edit_source[:1], int(grounding_px))
+        text = VISION_BLOCK + directive + VISION_BLOCK + instruction
+
+        # span 1 = packed moodboard (effects apply), span 2 = edit grounding (span_limit keeps it raw)
+        set_flags(clip, strength=float(strength), hide=bool(indirect), extract=extract_key, span_limit=1)
+        try:
+            tokens = clip.tokenize(text, images=[refs, edit_img], llama_template=KREA2_TEMPLATE)
+            conditioning = clip.encode_from_tokens_scheduled(tokens)
+        finally:
+            clear_flags(clip)
+        return (conditioning,)
+
+
+NODE_CLASS_MAPPINGS = {
+    "Krea2MoodboardEncode": Krea2MoodboardEncode,
+    "Krea2MoodboardEditFusion": Krea2MoodboardEditFusion,
+}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "Krea2MoodboardEncode": "Krea2 Moodboard Encode",
+    "Krea2MoodboardEditFusion": "Krea2 Moodboard + Edit Fusion",
+}
