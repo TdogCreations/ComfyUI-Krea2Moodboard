@@ -197,7 +197,14 @@ class Krea2IdentityEdit:
             # Fusion layout matches Neo: [moodboard rows][edit grounding + instruction rows].
             # Krea2 text tokens all sit at RoPE position 0, so order only affects attention, not
             # positions. This node's extras (identity ref latents) are the ones that must survive.
+            #
+            # The fused conditioning ends with the standard template tail
+            # ("<|im_end|>\n<|im_start|>assistant\n" = 5 rows) — keeping it would put a
+            # description boundary mid-sequence, which K2 can read as a SECOND subject being
+            # described (two-people outputs). Trim it so the fusion reads as one description.
             f_cond = fuse_with[0][0]
+            if f_cond.shape[1] > 5:
+                f_cond = f_cond[:, :-5]
             conditioning = [[torch.cat((f_cond.to(cond.device, cond.dtype), cond), dim=1), extras]
                             for cond, extras in conditioning]
         return (conditioning,)

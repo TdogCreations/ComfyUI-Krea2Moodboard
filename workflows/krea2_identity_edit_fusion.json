@@ -273,11 +273,11 @@
     "style / vibe",
     "full image",
     true,
-    false,
+    true,
     "before prompt",
     384
    ],
-   "title": "Moodboard for fusion (EMPTY prompt)"
+   "title": "Moodboard for fusion (EMPTY prompt, indirect ON)"
   },
   {
    "id": 8,
