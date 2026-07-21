@@ -2,7 +2,7 @@
  "id": "0891c12a-a61e-479d-ac13-6beac46e7aef",
  "revision": 0,
  "last_node_id": 18,
- "last_link_id": 21,
+ "last_link_id": 23,
  "nodes": [
   {
    "id": 3,
@@ -422,11 +422,13 @@
      "type": "LATENT",
      "slot_index": 0,
      "links": [
-      14
+      14,
+      22,
+      23
      ]
     }
    ],
-   "title": "match the source aspect ratio!",
+   "title": "output size (fit geometry handles AR)",
    "properties": {
     "cnr_id": "comfy-core",
     "ver": "0.27.0",
@@ -570,6 +572,11 @@
       "name": "grounding_px"
      },
      "link": null
+    },
+    {
+     "name": "target_latent",
+     "type": "LATENT",
+     "link": 22
     }
    ],
    "outputs": [
@@ -602,7 +609,10 @@
     true,
     false,
     384,
-    768
+    768,
+    1.0,
+    1.0,
+    "fit"
    ]
   },
   {
@@ -852,6 +862,11 @@
       "name": "grounding_px"
      },
      "link": null
+    },
+    {
+     "name": "target_latent",
+     "type": "LATENT",
+     "link": 23
     }
    ],
    "outputs": [
@@ -878,7 +893,10 @@
    },
    "widgets_values": [
     "",
-    768
+    768,
+    1.0,
+    1.0,
+    "fit"
    ]
   },
   {
@@ -1012,7 +1030,7 @@
     }
    },
    "widgets_values": [
-    "krea2_identity_edit_v1.safetensors",
+    "krea2_identity_edit_v1_2.safetensors",
     1
    ]
   }
@@ -1145,6 +1163,22 @@
    13,
    0,
    "IMAGE"
+  ],
+  [
+   22,
+   10,
+   0,
+   7,
+   14,
+   "LATENT"
+  ],
+  [
+   23,
+   10,
+   0,
+   8,
+   8,
+   "LATENT"
   ]
  ],
  "groups": [],
