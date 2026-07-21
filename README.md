@@ -7,6 +7,10 @@ krea.ai-style **moodboard / vibe transfer** and **identity-preserving editing** 
 **On Civitai** (release zips + showcase):
 [civitai.com/models/2794961](https://civitai.com/models/2794961/krea-2-moodboard-identity-edit-comfyui-nodes-forge-neo)
 
+⚡ **Plug and play**: purpose-built nodes, zero third-party node dependencies — the bundled example
+workflows run on ComfyUI core nodes + this pack alone. One node replaces your `CLIPTextEncode`;
+that's the whole integration.
+
 ## Nodes
 
 ### Krea 2 Moodboard
