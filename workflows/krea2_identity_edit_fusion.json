@@ -1,8 +1,8 @@
 {
  "id": "0891c12a-a61e-479d-ac13-6beac46e7aef",
  "revision": 0,
- "last_node_id": 18,
- "last_link_id": 23,
+ "last_node_id": 19,
+ "last_link_id": 24,
  "nodes": [
   {
    "id": 3,
@@ -271,7 +271,7 @@
      "localized_name": "positive",
      "name": "positive",
      "type": "CONDITIONING",
-     "link": 12
+     "link": 24
     },
     {
      "localized_name": "negative",
@@ -1033,6 +1033,47 @@
     "krea2_identity_edit_v1_2.safetensors",
     1
    ]
+  },
+  {
+   "id": 19,
+   "type": "Krea2Rebalance",
+   "pos": [
+    1090,
+    130
+   ],
+   "size": [
+    340,
+    150
+   ],
+   "flags": {},
+   "order": 19,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      24
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Krea2Rebalance"
+   },
+   "widgets_values": [
+    "balanced",
+    "1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.5, 5.0, 1.1, 4.0, 1.0",
+    1.0,
+    true
+   ]
   }
  ],
  "links": [
@@ -1128,8 +1169,8 @@
    12,
    7,
    0,
-   11,
-   1,
+   19,
+   0,
    "CONDITIONING"
   ],
   [
@@ -1179,6 +1220,14 @@
    8,
    8,
    "LATENT"
+  ],
+  [
+   24,
+   19,
+   0,
+   11,
+   1,
+   "CONDITIONING"
   ]
  ],
  "groups": [],

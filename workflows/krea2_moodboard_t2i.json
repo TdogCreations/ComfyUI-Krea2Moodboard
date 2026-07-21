@@ -1,6 +1,6 @@
 {
- "last_node_id": 11,
- "last_link_id": 11,
+ "last_node_id": 12,
+ "last_link_id": 12,
  "nodes": [
   {
    "id": 1,
@@ -334,7 +334,7 @@
     {
      "name": "positive",
      "type": "CONDITIONING",
-     "link": 6
+     "link": 12
     },
     {
      "name": "negative",
@@ -439,6 +439,47 @@
    "widgets_values": [
     "krea2_moodboard"
    ]
+  },
+  {
+   "id": 12,
+   "type": "Krea2Rebalance",
+   "pos": [
+    645,
+    40
+   ],
+   "size": [
+    340,
+    150
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      12
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Krea2Rebalance"
+   },
+   "widgets_values": [
+    "balanced",
+    "1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.5, 5.0, 1.1, 4.0, 1.0",
+    1.0,
+    true
+   ]
   }
  ],
  "links": [
@@ -486,8 +527,8 @@
    6,
    5,
    0,
-   9,
-   1,
+   12,
+   0,
    "CONDITIONING"
   ],
   [
@@ -529,6 +570,14 @@
    11,
    0,
    "IMAGE"
+  ],
+  [
+   12,
+   12,
+   0,
+   9,
+   1,
+   "CONDITIONING"
   ]
  ],
  "groups": [],

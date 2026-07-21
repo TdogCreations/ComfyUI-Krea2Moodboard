@@ -78,7 +78,22 @@ architecture — but the edit LoRA trained on 1–2 references, so 3+ tends to b
 LoRA author's multi-person recipe is chaining *edit passes* instead: place person A, then run a
 second edit adding person B from their reference).
 
+### Krea 2 Conditioning Rebalance
+Per-layer reweighting of K2's conditioning: the model conditions on a **12-layer Qwen3-VL stack**
+whose taps the DiT mixes linearly — shallow taps carry broad syntax/composition, deep taps carry
+fine detail (identity, texture, precise attributes). Insert between any conditioning node and the
+sampler. Presets: `balanced` (the classic community profile — deep taps 2.5/5.0/1.1/4.0),
+`detail`, `subtle`, `uniform`, or `custom` weights. **`renormalize` (default ON)** holds the
+overall magnitude so only the tap *ratios* change — the quality-preserving mode; global
+amplification (multiplier > 1) mostly degrades likeness/color. Compatible drop-in for workflows
+built around the community "Conditioning Krea2 Rebalance" node (its behavior = `renormalize` OFF,
+multiplier 4.0).
+
 ## Example workflows (`workflows/`)
+
+Both basic examples run the positive through **Krea 2 Conditioning Rebalance** (`balanced`,
+renormalized — set preset to `uniform` to bypass), and the fusion example ships the v1.2 wiring
+(`target_latent` connected, ref_boost dials exposed, v1_2 LoRA).
 
 - `krea2_moodboard_t2i.json` — basic vibe transfer text-to-image
 - `krea2_identity_edit_fusion.json` — identity edit + moodboard style fusion
@@ -106,8 +121,9 @@ bypass switches. Requires these custom node packs (all installable via ComfyUI-M
 
 The two lean example workflows above need NONE of these — core nodes + this pack only.
 
-Settings baked in: ModelSamplingAuraFlow shift 1.15, Euler/Simple, Turbo 8 steps CFG 1 (removals:
-Raw checkpoint, 20–40 steps, CFG 3). With the v1.2 LoRA, 8–12 steps (8 = composition, 12 = face
+Settings baked in: ModelSamplingAuraFlow shift 1.15 (= ComfyUI's stock Krea 2 default — the node
+is there as a handle; raise it for Raw-checkpoint recipes), Euler/Simple, Turbo 8 steps CFG 1
+(removals: Raw checkpoint, 20–40 steps, CFG 3). With the v1.2 LoRA, 8–12 steps (8 = composition, 12 = face
 detail). Generate ≤2MP. Matching the output AR to the source is no longer required when
 `target_latent` is connected (fit geometry) — but staying close still gives the best results.
 
@@ -132,6 +148,9 @@ bit-identical to stock when the nodes aren't used.
 
 Credits: [ComfyUI](https://github.com/comfyanonymous/ComfyUI) ·
 [lbouaraba/ComfyUI-Krea2Edit](https://github.com/lbouaraba/comfyui-krea2edit) (Apache-2.0 — the
-identity-edit dual-conditioning recipe this reimplements) · ethanfel & ostris (K2 vision-conditioning
-recipes) · Krea.ai (Krea 2, Community License). License: GPL-3.0 (ComfyUI-compatible). Not affiliated
-with Krea.ai.
+identity-edit dual-conditioning recipe this reimplements) ·
+[nova452/ComfyUI-ConditioningKrea2Rebalance](https://github.com/nova452/ComfyUI-ConditioningKrea2Rebalance)
+& [huwhitememes/comfyui-krea2-conditioning](https://github.com/huwhitememes/comfyui-krea2-conditioning)
+(Apache-2.0 — the per-layer rebalance mechanic and its RMS-renormalized variant) · ethanfel & ostris
+(K2 vision-conditioning recipes) · Krea.ai (Krea 2, Community License). License: GPL-3.0
+(ComfyUI-compatible). Not affiliated with Krea.ai.

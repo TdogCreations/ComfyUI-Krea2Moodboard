@@ -26,6 +26,7 @@ from comfy.text_encoders.krea2 import KREA2_TEMPLATE, Krea2TEModel
 
 from .identity import Krea2IdentityEdit, fit_image_to_latent
 from .moodboard import Krea2Moodboard
+from .rebalance import Krea2Rebalance
 
 STYLE_DIRECTIVE = (
     "The image uses only the art style, color palette, lighting, texture, rendering technique and "
@@ -429,6 +430,7 @@ NODE_CLASS_MAPPINGS = {
     "Krea2IdentityEdit": Krea2IdentityEdit,
     "Krea2MoodboardIdentityFusion": Krea2MoodboardIdentityFusion,
     "Krea2EditSourceChain": Krea2EditSourceChain,
+    "Krea2Rebalance": Krea2Rebalance,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Krea2Moodboard": "Krea 2 Moodboard",
@@ -436,4 +438,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Krea2IdentityEdit": "Krea 2 Identity Edit",
     "Krea2MoodboardIdentityFusion": "Krea 2 Moodboard + Identity Fusion",
     "Krea2EditSourceChain": "Krea2 Edit Source Chain",
+    "Krea2Rebalance": "Krea 2 Conditioning Rebalance",
 }
