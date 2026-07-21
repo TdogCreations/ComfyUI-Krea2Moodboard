@@ -11,6 +11,24 @@ krea.ai-style **moodboard / vibe transfer** and **identity-preserving editing** 
 workflows run on ComfyUI core nodes + this pack alone. One node replaces your `CLIPTextEncode`;
 that's the whole integration.
 
+## Why not just the stock nodes?
+
+Stock ComfyUI runs Krea 2 text-to-image perfectly — this pack exists for what the stock nodes
+*can't* do with reference images:
+
+- Stock image-reference encodes (the qwen-edit style nodes) pass references through the encoder as
+  **semantic description only**, using QwenImage's template rather than K2's: the model learns
+  *what's in* your reference, with no control over *which aspect* transfers (style vs subject), no
+  strength dial, and multi-reference inputs can collapse into grid/collage outputs.
+- Core's `ReferenceLatent` node attaches latents that **K2's stock model ignores** — there is no
+  in-context pixel path, so no true identity preservation, no edit-LoRA support.
+
+This pack adds both halves on top of the stock implementation: the moodboard controls (strength,
+style↔subject extraction, crops, indirect mode, grid-safe packed spans) and the full identity-edit
+recipe (in-context source latents at RoPE frames 1..N, K2-template grounded instruction + grounded
+negative, v1.2 fit geometry, ref_boost) — plus single-encode fusion of the two. All additive: leave
+the nodes unused and every patched path is bit-identical to stock ComfyUI.
+
 ## Nodes
 
 ### Krea 2 Moodboard
