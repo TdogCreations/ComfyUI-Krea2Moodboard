@@ -157,6 +157,9 @@ bypass switches. Requires these custom node packs (all installable via ComfyUI-M
 | comfyui_layerstyle | seed node |
 | ComfyUI-WhiteRabbit | batch Lanczos resize |
 | Derfuu_ComfyUI_ModdedNodes | text box |
+| sam3_smartinpainter + ComfyUI-Easy-Sam3 | text-prompted face inpainter — needs `sam3.pt` in `models/sams` (e.g. HF jetjodh/sam3) |
+| comfyui-detail-daemon | detail boost in the sampler stack (keep detail_amount ≤ 0.05 on short/Turbo schedules) |
+| ComfyUI_UltimateSDUpscale | tiled upscale pass — uses `4x_NMKD-Siax_200k.pth` in `models/upscale_models` |
 
 The two lean example workflows above need NONE of these — core nodes + this pack only.
 
